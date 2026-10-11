@@ -10,7 +10,48 @@ export function createServer() {
   const app = express();
 
   // Security Middleware
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'", "*"],
+          imgSrc: [
+            "'self'",
+            "data:",
+            "blob:",
+            "https://*.openstreetmap.org",
+            "https://*.tile.openstreetmap.org",
+            "https://*.basemaps.cartocdn.com",
+            "https://server.arcgisonline.com",
+            "https://*.arcgisonline.com",
+            "https://*.supabase.co",
+            "https://images.unsplash.com",
+            "*"
+          ],
+          scriptSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            "'unsafe-eval'",
+            "https://checkout.razorpay.com",
+            "https://unpkg.com"
+          ],
+          connectSrc: [
+            "'self'",
+            "*",
+            "https://*.supabase.co",
+            "https://api.razorpay.com",
+            "https://*.tile.openstreetmap.org",
+            "https://*.basemaps.cartocdn.com"
+          ],
+          frameSrc: ["'self'", "https://api.razorpay.com"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://unpkg.com"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"]
+        }
+      },
+      crossOriginEmbedderPolicy: false,
+      referrerPolicy: { policy: "origin-when-cross-origin" }
+    })
+  );
   app.use(cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],

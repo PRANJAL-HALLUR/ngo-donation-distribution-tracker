@@ -37,15 +37,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 function getUsersRegistry(): Record<string, UserData> {
   try {
     const raw = localStorage.getItem('fundhub_users_registry');
-    return raw ? JSON.parse(raw) : {
+    const defaultRegistry: Record<string, UserData> = {
       'admin@fundhub.com': {
         id: 'usr_admin_1',
         email: 'admin@fundhub.com',
         role: 'app_admin',
         name: 'System Admin',
         displayName: 'Platform Administrator',
+      },
+      'ngo@careandhope.org': {
+        id: '11111111-1111-1111-1111-111111111111',
+        email: 'ngo@careandhope.org',
+        role: 'ngo_admin',
+        name: 'Care & Hope Foundation',
+        displayName: 'Care & Hope Foundation',
+        ngoName: 'Care & Hope Foundation',
+        ngoCategory: 'Food & Healthcare',
       }
     };
+    if (!raw) return defaultRegistry;
+    const parsed = JSON.parse(raw);
+    return { ...defaultRegistry, ...parsed };
   } catch {
     return {};
   }
@@ -202,6 +214,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       const cleanEmail = email.trim().toLowerCase();
+
+      // 1-Click NGO Demo Account Special Bypass: Auto-fill default mock profile & bypass checks
+      if (cleanEmail === 'ngo@careandhope.org') {
+        const demoNgoUser: UserData = {
+          id: '11111111-1111-1111-1111-111111111111',
+          email: 'ngo@careandhope.org',
+          role: 'ngo_admin',
+          name: 'Care & Hope Foundation',
+          displayName: 'Care & Hope Foundation',
+          ngoName: 'Care & Hope Foundation',
+          ngoCategory: 'Food & Healthcare',
+        };
+        const registry = getUsersRegistry();
+        registry[cleanEmail] = demoNgoUser;
+        saveUsersRegistry(registry);
+
+        localStorage.setItem('fundhub_demo_user', JSON.stringify(demoNgoUser));
+        setUser({ id: demoNgoUser.id, email: demoNgoUser.email });
+        setUserData(demoNgoUser);
+        setRole(demoNgoUser.role);
+        return demoNgoUser;
+      }
 
       // 1. Try Supabase Auth
       try {

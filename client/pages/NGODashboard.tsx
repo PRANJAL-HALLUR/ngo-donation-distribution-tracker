@@ -75,7 +75,32 @@ export default function NGODashboard() {
     );
   }
 
-  if (!currentNgo || currentNgo.status === undefined) {
+  const isDemoNgo = userData?.email === 'ngo@careandhope.org' || user?.email === 'ngo@careandhope.org';
+  const effectiveNgo = isDemoNgo
+    ? (currentNgo || {
+        id: '11111111-1111-1111-1111-111111111111',
+        user_id: 'seed-1',
+        name: 'Care & Hope Foundation',
+        description: 'Providing nutritional meals, healthcare kits, and shelter support to underprivileged children and families across urban communities.',
+        mission: 'Eliminating hunger and empowering the next generation through health and education.',
+        registration_id: 'REG-100234',
+        contact_email: 'contact@careandhope.org',
+        phone_number: '+91 9876543210',
+        category: 'Food & Healthcare',
+        address: '12 Marine Drive, Nariman Point',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        country: 'India',
+        latitude: 18.9256,
+        longitude: 72.8242,
+        verification_document_url: '',
+        status: 'approved',
+        total_received: 4250,
+        image: '🍲'
+      })
+    : currentNgo;
+
+  if (!isDemoNgo && (!effectiveNgo || effectiveNgo.status === undefined)) {
     return (
       <div className="min-h-screen bg-slate-50 py-12">
         <div className="max-w-7xl mx-auto px-4 flex justify-end mb-4">
@@ -86,7 +111,7 @@ export default function NGODashboard() {
     );
   }
 
-  if (currentNgo.status === 'pending') {
+  if (!isDemoNgo && effectiveNgo.status === 'pending') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-xl text-center">
@@ -101,7 +126,7 @@ export default function NGODashboard() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-slate-500">
-              We will notify you at {currentNgo.contact_email} once your account is approved.
+              We will notify you at {effectiveNgo.contact_email} once your account is approved.
             </p>
             <Button onClick={handleLogout} variant="outline" className="w-full">Logout</Button>
           </CardContent>
@@ -110,14 +135,14 @@ export default function NGODashboard() {
     );
   }
 
-  if (currentNgo.status === 'rejected' || currentNgo.status === 'suspended') {
+  if (!isDemoNgo && (effectiveNgo.status === 'rejected' || effectiveNgo.status === 'suspended')) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-xl text-center border-red-200">
           <CardHeader>
-            <CardTitle className="text-2xl text-red-600">Account {currentNgo.status}</CardTitle>
+            <CardTitle className="text-2xl text-red-600">Account {effectiveNgo.status}</CardTitle>
             <CardDescription className="mt-2">
-              Your NGO account has been {currentNgo.status}. Please contact support.
+              Your NGO account has been {effectiveNgo.status}. Please contact support.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -149,7 +174,7 @@ export default function NGODashboard() {
         <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">FundHub NGO</h1>
-            <p className="text-slate-500 mt-1">Dashboard - {currentNgo.name}</p>
+            <p className="text-slate-500 mt-1">Dashboard - {effectiveNgo?.name || 'Care & Hope Foundation'}</p>
           </div>
           <Button variant="ghost" onClick={handleLogout}>
             <LogOut className="h-5 w-5 mr-2" /> Logout

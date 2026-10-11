@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth, type UserRole } from '@/context/AuthContext';
 
 interface ProtectedRouteProps {
@@ -9,7 +9,8 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole, allowedRoles }: ProtectedRouteProps) {
-  const { user, role, loading } = useAuth();
+  const { user, userData, role, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -47,6 +48,14 @@ export function ProtectedRoute({ children, requiredRole, allowedRoles }: Protect
 
   if (!user) {
     return <Navigate to="/" />;
+  }
+
+  // Bypass complete-profile check for demo account ngo@careandhope.org
+  if (
+    location.pathname === '/complete-profile' &&
+    (user.email === 'ngo@careandhope.org' || userData?.email === 'ngo@careandhope.org')
+  ) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (requiredRole && role !== requiredRole) {
