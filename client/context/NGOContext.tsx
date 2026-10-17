@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import { SEED_NGOS_EXTENDED } from '@/data/demoData';
 
 export interface NGO {
   id: string;
@@ -33,6 +34,7 @@ interface NGOContextType {
   submitOnboarding: (ngoData: Partial<NGO>, file: File) => Promise<void>;
   currentNgo: NGO | null;
   refreshCurrentNgo: () => Promise<void>;
+  resetNGOsDemoData: () => void;
 }
 
 const SEED_NGOS: NGO[] = [
@@ -168,20 +170,39 @@ const NGOContext = createContext<NGOContextType | undefined>(undefined);
 
 export function NGOProvider({ children }: { children: React.ReactNode }) {
   const { user, userData } = useAuth();
-  const [ngos, setNgos] = useState<NGO[]>(SEED_NGOS);
+  const [ngos, setNgos] = useState<NGO[]>(() => {
+    try {
+      const stored = localStorage.getItem('fundhub_local_ngos');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return SEED_NGOS_EXTENDED;
+  });
+
   const [currentNgo, setCurrentNgo] = useState<NGO | null>(() => {
     try {
       const stored = localStorage.getItem('fundhub_demo_user');
       if (stored) {
         const u = JSON.parse(stored);
         if (u.email === 'ngo@careandhope.org') {
-          return SEED_NGOS[0];
+          return SEED_NGOS_EXTENDED[0];
         }
       }
     } catch {}
     return null;
   });
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('fundhub_local_ngos', JSON.stringify(ngos));
+  }, [ngos]);
+
+  const resetNGOsDemoData = () => {
+    setNgos(SEED_NGOS_EXTENDED);
+    localStorage.setItem('fundhub_local_ngos', JSON.stringify(SEED_NGOS_EXTENDED));
+  };
 
   const fetchApprovedNGOs = async () => {
     try {
@@ -207,28 +228,28 @@ export function NGOProvider({ children }: { children: React.ReactNode }) {
         .from('ngos')
         .select('*')
         .eq('status', 'pending');
-      if (error) throw error;
-      return data || [];
+      if (!error && data && data.length > 0) return data;
     } catch (err) {
-      console.error('Error fetching pending NGOs:', err);
-      return [];
+      console.warn('Error fetching pending NGOs from Supabase, using local state:', err);
     }
+    return ngos.filter(n => n.status === 'pending');
   };
 
   const updateNGOStatus = async (id: string, status: NGO['status']) => {
     try {
-      const { error } = await supabase
+      await supabase
         .from('ngos')
         .update({ status })
         .eq('id', id);
-      if (error) throw error;
-      
-      // Update local state if needed
-      setNgos(prev => prev.map(n => n.id === id ? { ...n, status } : n));
     } catch (err) {
-      console.error('Error updating NGO status:', err);
-      throw err;
+      console.warn('Supabase status update failed, saving locally:', err);
     }
+    // Update local state and persist
+    setNgos(prev => {
+      const updated = prev.map(n => n.id === id ? { ...n, status } : n);
+      localStorage.setItem('fundhub_local_ngos', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const refreshCurrentNgo = async () => {
@@ -317,7 +338,8 @@ export function NGOProvider({ children }: { children: React.ReactNode }) {
     updateNGOStatus,
     submitOnboarding,
     currentNgo,
-    refreshCurrentNgo
+    refreshCurrentNgo,
+    resetNGOsDemoData
   };
 
   return <NGOContext.Provider value={value}>{children}</NGOContext.Provider>;

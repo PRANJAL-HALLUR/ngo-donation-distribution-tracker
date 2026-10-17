@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { SEED_DONATIONS, SEED_DISTRIBUTIONS } from '@/data/demoData';
 
 export interface LocationInfo {
   lat: number;
@@ -14,12 +15,16 @@ export interface Donation {
   id: string;
   donor_id: string;
   ngo_id: string;
+  donor_name?: string;
+  ngo_name?: string;
   amount: number;
   currency: string;
   status: 'pending_payment' | 'completed' | 'allocated' | 'distributed' | 'verified';
   razorpay_order_id?: string;
   type: string;
   created_at: string;
+  is_flagged?: boolean;
+  flag_reason?: string;
 }
 
 export interface Distribution {
@@ -32,6 +37,12 @@ export interface Distribution {
   notes: string;
   status: 'distributed' | 'verified';
   distributed_at: string;
+  ngo_name?: string;
+  location?: string;
+  beneficiary_count?: number;
+  latitude?: number;
+  longitude?: number;
+  proof_type?: string;
 }
 
 interface DonationContextType {
@@ -39,9 +50,13 @@ interface DonationContextType {
   distributions: Distribution[];
   loading: boolean;
   makeDonation: (ngoId: string, amount: number, currency: string, type: string) => Promise<void>;
-  logDistribution: (donationId: string, beneficiary: string, amount: number, notes: string, file: File) => Promise<void>;
+  logDistribution: (donationId: string, beneficiary: string, amount: number, notes: string, file?: File | null, meta?: { beneficiary_count?: number; location?: string; proofUrlFallback?: string }) => Promise<void>;
   fetchDonorHistory: () => Promise<void>;
   fetchNGODonations: () => Promise<void>;
+  verifyDistribution: (distributionId: string, donationId?: string) => Promise<void>;
+  flagDonation: (donationId: string, reason?: string) => Promise<void>;
+  unflagDonation: (donationId: string) => Promise<void>;
+  resetDonationsDemoData: () => void;
 }
 
 const DonationContext = createContext<DonationContextType | undefined>(undefined);
@@ -53,12 +68,25 @@ export function DonationProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   
   const [donations, setDonations] = useState<Donation[]>(() => {
-    const saved = localStorage.getItem('fundhub_local_donations');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('fundhub_local_donations');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return SEED_DONATIONS;
   });
+
   const [distributions, setDistributions] = useState<Distribution[]>(() => {
-    const saved = localStorage.getItem('fundhub_local_distributions');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('fundhub_local_distributions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return SEED_DISTRIBUTIONS;
   });
   const [loading, setLoading] = useState(false);
 
@@ -242,36 +270,52 @@ export function DonationProvider({ children }: { children: React.ReactNode }) {
     await completeDonation(`pay_mock_${Date.now()}`, 'mock_signature');
   };
 
-  const logDistribution = async (donationId: string, beneficiary: string, amount: number, notes: string, file: File) => {
+  const logDistribution = async (
+    donationId: string,
+    beneficiary: string,
+    amount: number,
+    notes: string,
+    file?: File | null,
+    meta?: { beneficiary_count?: number; location?: string; proofUrlFallback?: string }
+  ) => {
     if (!user) throw new Error('Not authenticated');
 
-    let proofUrl = '';
-    try {
-      const fileExt = file.name.split('.').pop();
-      const filePath = `proofs/${user.id}_${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('ngo_documents').upload(filePath, file);
-      if (!uploadError) {
-        const { data: { publicUrl } } = supabase.storage.from('ngo_documents').getPublicUrl(filePath);
-        proofUrl = publicUrl;
+    let proofUrl = meta?.proofUrlFallback || '';
+    if (file) {
+      try {
+        const fileExt = file.name.split('.').pop();
+        const filePath = `proofs/${user.id}_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('ngo_documents').upload(filePath, file);
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage.from('ngo_documents').getPublicUrl(filePath);
+          proofUrl = publicUrl;
+        }
+      } catch {
+        console.warn('Storage bucket not accessible, creating direct object URL:');
       }
-    } catch {
-      console.warn('Storage bucket not accessible, creating direct object URL:');
+
+      if (!proofUrl) {
+        proofUrl = URL.createObjectURL(file);
+      }
     }
 
     if (!proofUrl) {
-      proofUrl = URL.createObjectURL(file);
+      proofUrl = 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&auto=format&fit=crop&q=60';
     }
 
     const newDist: Distribution = {
       id: `dist_${Date.now()}`,
-      ngo_id: user.id,
+      ngo_id: user.id || '11111111-1111-1111-1111-111111111111',
       donation_id: donationId,
       beneficiary_name: beneficiary,
       amount_spent: amount,
       notes,
       proof_image_url: proofUrl,
       status: 'distributed',
-      distributed_at: new Date().toISOString()
+      distributed_at: new Date().toISOString(),
+      location: meta?.location || 'Mumbai, Maharashtra',
+      beneficiary_count: meta?.beneficiary_count || 50,
+      proof_type: 'Field Delivery Receipt & Photo'
     };
 
     // Try saving to Supabase
@@ -286,7 +330,49 @@ export function DonationProvider({ children }: { children: React.ReactNode }) {
     setDistributions(prev => [newDist, ...prev]);
     setDonations(prev => prev.map(d => d.id === donationId ? { ...d, status: 'distributed' } : d));
 
-    toast({ title: 'Distribution Logged!', description: 'Proof of distribution uploaded and verified.' });
+    toast({ title: 'Distribution Logged!', description: 'Proof of distribution uploaded and submitted for review.' });
+  };
+
+  const verifyDistribution = async (distId: string, donationId?: string) => {
+    try {
+      await supabase.from('distributions').update({ status: 'verified' }).eq('id', distId);
+      if (donationId) {
+        await supabase.from('donations').update({ status: 'verified' }).eq('id', donationId);
+      }
+    } catch {}
+
+    setDistributions(prev => prev.map(d => d.id === distId ? { ...d, status: 'verified' } : d));
+    if (donationId) {
+      setDonations(prev => prev.map(d => d.id === donationId ? { ...d, status: 'verified' } : d));
+    }
+
+    toast({ title: 'Proof Verified!', description: 'Distribution proof has been verified and marked certified.' });
+  };
+
+  const flagDonation = async (donationId: string, reason: string = 'High-risk or compliance review required') => {
+    try {
+      await supabase.from('donations').update({ is_flagged: true, flag_reason: reason }).eq('id', donationId);
+    } catch {}
+
+    setDonations(prev => prev.map(d => d.id === donationId ? { ...d, is_flagged: true, flag_reason: reason } : d));
+    toast({ title: 'Donation Flagged', description: 'Transaction marked for compliance review.', variant: 'destructive' });
+  };
+
+  const unflagDonation = async (donationId: string) => {
+    try {
+      await supabase.from('donations').update({ is_flagged: false, flag_reason: null }).eq('id', donationId);
+    } catch {}
+
+    setDonations(prev => prev.map(d => d.id === donationId ? { ...d, is_flagged: false, flag_reason: undefined } : d));
+    toast({ title: 'Flag Cleared', description: 'Transaction cleared and marked safe.' });
+  };
+
+  const resetDonationsDemoData = () => {
+    setDonations(SEED_DONATIONS);
+    setDistributions(SEED_DISTRIBUTIONS);
+    localStorage.setItem('fundhub_local_donations', JSON.stringify(SEED_DONATIONS));
+    localStorage.setItem('fundhub_local_distributions', JSON.stringify(SEED_DISTRIBUTIONS));
+    toast({ title: 'Demo Data Reset', description: 'All donations and distributions restored to default demo state.' });
   };
 
   return (
@@ -297,7 +383,11 @@ export function DonationProvider({ children }: { children: React.ReactNode }) {
       makeDonation,
       logDistribution,
       fetchDonorHistory,
-      fetchNGODonations
+      fetchNGODonations,
+      verifyDistribution,
+      flagDonation,
+      unflagDonation,
+      resetDonationsDemoData
     }}>
       {children}
     </DonationContext.Provider>
